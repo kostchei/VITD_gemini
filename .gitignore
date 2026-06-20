@@ -1,0 +1,21 @@
+# Godot-specific ignores
+.godot/
+.import/
+export_presets.cfg
+
+# Mono/C#/.NET ignores
+bin/
+obj/
+.dotnet/
+.vs/
+.idea/
+*.user
+*.suo
+*.sln.docstates
+
+# OS-specific ignores
+.DS_Store
+Thumbs.db
+
+# Generated map assets
+world_map.json
