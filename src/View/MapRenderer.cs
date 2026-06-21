@@ -18,8 +18,8 @@ public partial class MapRenderer : Node2D
     [Export] public float DungeonCellSize = 40.0f;
 
     // Styling Colors
-    private readonly Color BackgroundColor = Color.FromHtml("#eef2f7");
-    private readonly Color LineColor = Color.FromHtml("#b2c2d8");
+    private readonly Color BackgroundColor = Color.FromHtml("#e2e8f0");
+    private readonly Color LineColor = Color.FromHtml("#475569");
     private readonly Color SelectedOutlineColor = Color.FromHtml("#3b82f6"); // Blue
     private readonly Color HoverOutlineColor = Color.FromHtml("#ef4444"); // Coral Red
 
@@ -94,20 +94,20 @@ public partial class MapRenderer : Node2D
     {
         if (ActiveData == null) return;
 
-        if (@event is InputEventMouseMotion mouseMotion)
+        if (@event is InputEventMouseMotion)
         {
-            UpdateHover(mouseMotion.Position);
+            UpdateHover();
         }
         else if (@event is InputEventMouseButton mouseButton && mouseButton.Pressed && mouseButton.ButtonIndex == MouseButton.Left)
         {
-            HandleClick(mouseButton.Position);
+            HandleClick();
         }
     }
 
-    private void UpdateHover(Vector2 screenMousePos)
+    private void UpdateHover()
     {
         if (ActiveData == null) return;
-        Vector2 localMousePos = ToLocal(screenMousePos);
+        Vector2 localMousePos = GetLocalMousePosition();
 
         switch (CurrentScale)
         {
@@ -190,37 +190,74 @@ public partial class MapRenderer : Node2D
         }
     }
 
-    private void HandleClick(Vector2 screenMousePos)
+    private void HandleClick()
     {
-        Vector2 localMousePos = ToLocal(screenMousePos);
-
         switch (CurrentScale)
         {
             case MapScale.Regional:
                 if (HoveredRegCoords.HasValue)
                 {
-                    SelectedRegCoords = HoveredRegCoords.Value;
-                    EmitSignal(SignalName.RegionalSelected, SelectedRegCoords.Value.Q, SelectedRegCoords.Value.R);
-                    QueueRedraw();
+                    if (SelectedRegCoords == HoveredRegCoords.Value)
+                    {
+                        SelectedRegCoords = null;
+                        EmitSignal(SignalName.RegionalSelected, 999, 999);
+                    }
+                    else
+                    {
+                        SelectedRegCoords = HoveredRegCoords.Value;
+                        EmitSignal(SignalName.RegionalSelected, SelectedRegCoords.Value.Q, SelectedRegCoords.Value.R);
+                    }
                 }
+                else
+                {
+                    SelectedRegCoords = null;
+                    EmitSignal(SignalName.RegionalSelected, 999, 999);
+                }
+                QueueRedraw();
                 break;
 
             case MapScale.Local:
                 if (HoveredLocalCoords.HasValue)
                 {
-                    SelectedLocalCoords = HoveredLocalCoords.Value;
-                    EmitSignal(SignalName.LocalSelected, SelectedLocalCoords.Value.Q, SelectedLocalCoords.Value.R);
-                    QueueRedraw();
+                    if (SelectedLocalCoords == HoveredLocalCoords.Value)
+                    {
+                        SelectedLocalCoords = null;
+                        EmitSignal(SignalName.LocalSelected, 999, 999);
+                    }
+                    else
+                    {
+                        SelectedLocalCoords = HoveredLocalCoords.Value;
+                        EmitSignal(SignalName.LocalSelected, SelectedLocalCoords.Value.Q, SelectedLocalCoords.Value.R);
+                    }
                 }
+                else
+                {
+                    SelectedLocalCoords = null;
+                    EmitSignal(SignalName.LocalSelected, 999, 999);
+                }
+                QueueRedraw();
                 break;
 
             case MapScale.Dungeon:
                 if (HoveredDungeonCell.HasValue)
                 {
-                    SelectedDungeonCell = HoveredDungeonCell.Value;
-                    EmitSignal(SignalName.DungeonSelected, SelectedDungeonCell.Value.X, SelectedDungeonCell.Value.Y);
-                    QueueRedraw();
+                    if (SelectedDungeonCell == HoveredDungeonCell.Value)
+                    {
+                        SelectedDungeonCell = null;
+                        EmitSignal(SignalName.DungeonSelected, -1, -1);
+                    }
+                    else
+                    {
+                        SelectedDungeonCell = HoveredDungeonCell.Value;
+                        EmitSignal(SignalName.DungeonSelected, SelectedDungeonCell.Value.X, SelectedDungeonCell.Value.Y);
+                    }
                 }
+                else
+                {
+                    SelectedDungeonCell = null;
+                    EmitSignal(SignalName.DungeonSelected, -1, -1);
+                }
+                QueueRedraw();
                 break;
         }
     }
@@ -259,11 +296,10 @@ public partial class MapRenderer : Node2D
             var tile = pair.Value;
 
             Vector2 center = coords.ToPixel(RegHexSize, true);
-            Color fillCol = GetBiomeColor(tile.Biome);
-
-            // Draw Hex Polygon
             Vector2[] vertices = GetHexVertices(center, RegHexSize, true);
-            DrawColoredPolygon(vertices, fillCol);
+
+            // Draw Hex Polygon (Background + Dither)
+            FillAndDitherHex(vertices, tile.Biome, RegHexSize);
 
             // Draw Outline
             DrawHexOutline(center, RegHexSize, LineColor, 1.0f, true);
@@ -316,10 +352,8 @@ public partial class MapRenderer : Node2D
             Vector2[] clippedVertices = GetClippedLocalSubhexVertices(coords);
             if (clippedVertices.Length == 0) continue;
 
-            Color fillCol = GetLocalBiomeColor(tile.Biome);
-
-            // Draw Hex Polygon
-            DrawColoredPolygon(clippedVertices, fillCol);
+            // Draw Hex Polygon (Background + Dither)
+            FillAndDitherHex(clippedVertices, tile.Biome, LocalHexSize);
 
             // Draw Outline
             Vector2[] loop = new Vector2[clippedVertices.Length + 1];
@@ -333,12 +367,23 @@ public partial class MapRenderer : Node2D
             {
                 DrawLandmarkSymbol(center, tile.Landmark, LocalHexSize * 0.45f);
             }
-            else
+            else if (tile.Biome != "Wastes")
             {
                 // Soft abbreviation
                 string abbrev = tile.Biome.Length > 3 ? tile.Biome.Substring(0, 3) : tile.Biome;
                 DrawTextCentered(abbrev.ToUpper(), center, 9, Color.FromHtml("#475569"));
             }
+        }
+
+        // Draw Hazards
+        var hazards = ActiveData.GetOrCreateLocalHazards(SelectedRegCoords.Value, (rc) => 
+            Generation.MockGenerator.GenerateLocalHazards(rc, localMap)
+        );
+        foreach (var hazard in hazards)
+        {
+            if (!hazard.IsActive) continue;
+            Vector2 center = hazard.Coords.ToPixel(LocalHexSize, true);
+            DrawHazardSymbol(center, hazard.Type, LocalHexSize * 0.45f);
         }
 
         // Draw Hover Outline
@@ -672,6 +717,169 @@ public partial class MapRenderer : Node2D
             "City Gate" => Color.FromHtml("#7c3aed"),
             _ => Color.FromHtml("#2e3f28")
         };
+    }
+
+    private void DrawHazardSymbol(Vector2 center, int type, float size)
+    {
+        // Draw a premium glowing circular backing for the hazard to make it stand out
+        Color backColor = Color.FromHtml("#0f172a"); // Dark slate background
+        Color glowColor = type switch
+        {
+            1 => Color.FromHtml("#ef4444"), // Red for Warband
+            2 => Color.FromHtml("#a855f7"), // Purple/violet for Maelstrom
+            3 => Color.FromHtml("#22c55e"), // Green for Crawlherd
+            4 => Color.FromHtml("#f97316"), // Orange for Collapse
+            5 => Color.FromHtml("#3b82f6"), // Blue for Void Lightning
+            6 => Color.FromHtml("#eab308"), // Yellow/amber for Singing Sand
+            _ => Color.FromHtml("#64748b")
+        };
+
+        // Draw backing circle
+        DrawCircle(center, size, backColor);
+        // Draw outer glow outline
+        DrawCircle(center, size, glowColor, false, 2.0f);
+
+        // Draw the hazard type icon
+        float innerSize = size * 0.6f;
+        switch (type)
+        {
+            case 1: // Warband: Draw crossed axes / lines
+                DrawLine(center + new Vector2(-innerSize, -innerSize), center + new Vector2(innerSize, innerSize), glowColor, 2.0f, true);
+                DrawLine(center + new Vector2(innerSize, -innerSize), center + new Vector2(-innerSize, innerSize), glowColor, 2.0f, true);
+                // Draw a small cross bar
+                DrawLine(center + new Vector2(-innerSize * 0.5f, 0), center + new Vector2(innerSize * 0.5f, 0), glowColor, 2.0f, true);
+                break;
+
+            case 2: // Maelstrom: Draw a spiral/swirl
+                int pointsCount = 12;
+                Vector2[] spiral = new Vector2[pointsCount];
+                for (int i = 0; i < pointsCount; i++)
+                {
+                    float angle = i * 0.8f + _time * 2.0f;
+                    float radius = innerSize * ((float)i / pointsCount);
+                    spiral[i] = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+                }
+                DrawPolyline(spiral, glowColor, 2.0f, true);
+                break;
+
+            case 3: // Crawlherd: Draw a cluster of dots
+                DrawCircle(center + new Vector2(-innerSize * 0.4f, -innerSize * 0.2f), 2.0f, glowColor);
+                DrawCircle(center + new Vector2(innerSize * 0.4f, -innerSize * 0.3f), 2.0f, glowColor);
+                DrawCircle(center + new Vector2(-innerSize * 0.2f, innerSize * 0.4f), 2.0f, glowColor);
+                DrawCircle(center + new Vector2(innerSize * 0.1f, innerSize * 0.1f), 2.5f, glowColor);
+                DrawCircle(center + new Vector2(0, -innerSize * 0.5f), 1.5f, glowColor);
+                break;
+
+            case 4: // Collapse: Draw a falling debris/triangle
+                Vector2[] rubble = new Vector2[]
+                {
+                    center + new Vector2(0, -innerSize),
+                    center + new Vector2(innerSize * 0.8f, innerSize * 0.6f),
+                    center + new Vector2(-innerSize * 0.8f, innerSize * 0.6f),
+                    center + new Vector2(0, -innerSize)
+                };
+                DrawPolyline(rubble, glowColor, 2.0f, true);
+                DrawLine(center + new Vector2(-innerSize * 0.4f, innerSize * 0.2f), center + new Vector2(innerSize * 0.4f, innerSize * 0.2f), glowColor, 1.5f, true);
+                break;
+
+            case 5: // Void Lightning: Draw a lightning bolt
+                Vector2[] bolt = new Vector2[]
+                {
+                    center + new Vector2(innerSize * 0.3f, -innerSize),
+                    center + new Vector2(-innerSize * 0.3f, 0),
+                    center + new Vector2(innerSize * 0.2f, 0),
+                    center + new Vector2(-innerSize * 0.2f, innerSize)
+                };
+                DrawPolyline(bolt, glowColor, 2.0f, true);
+                break;
+
+            case 6: // Singing Sand: Draw wavy lines
+                for (int yOffset = -1; yOffset <= 1; yOffset++)
+                {
+                    float y = center.Y + yOffset * innerSize * 0.5f;
+                    Vector2[] wave = new Vector2[7];
+                    for (int i = 0; i < 7; i++)
+                    {
+                        float x = center.X - innerSize + (innerSize * 2.0f * i / 6.0f);
+                        float sine = Mathf.Sin(i * 1.5f + _time * 4.0f) * 3.0f;
+                        wave[i] = new Vector2(x, y + sine);
+                    }
+                    DrawPolyline(wave, glowColor, 1.5f, true);
+                }
+                break;
+        }
+
+        // Draw the hazard face value (1-6) as a small label in the center
+        DrawTextCentered(type.ToString(), center, 10, Color.FromHtml("#ffffff"));
+    }
+
+    private void FillAndDitherHex(Vector2[] vertices, string biome, float size)
+    {
+        // 1. Get solid backing color
+        Color backingColor = biome switch
+        {
+            "Wastes" => Color.FromHtml("#fafafa"),
+            "Ruins" => Color.FromHtml("#f1f5f9"),
+            "Settlements" or "Campsite" or "Castle" or "City" or "Settlement" or "Castle Gate" or "City Gate" => Color.FromHtml("#fef9c3"),
+            "Pillars" => Color.FromHtml("#334155"),
+            "Dungeon Gate" or "Dungeon" => Color.FromHtml("#334155"),
+            "Ocean" or "Deep Water" => Color.FromHtml("#bae6fd"),
+            "Plains" or "Plains Grass" or "Meadow" => Color.FromHtml("#dcfce7"),
+            "Forest" or "Dense Woods" or "Clearic Forest" or "Ancient Tree" => Color.FromHtml("#bbf7d0"),
+            "Mountains" or "Peak" or "Ridge" or "Rocky Hills" => Color.FromHtml("#cbd5e1"),
+            "Swamp" or "Brog" or "Miry Marsh" => Color.FromHtml("#f3e8ff"),
+            "Desert" or "Sand Dunes" or "Rocky Flats" => Color.FromHtml("#fde68a"),
+            _ => Color.FromHtml("#fafafa")
+        };
+
+        // Draw solid background polygon
+        DrawColoredPolygon(vertices, backingColor);
+
+        // 2. Draw stipple/dither overlay if applicable
+        int step = size > 50.0f ? 8 : 4;
+        float dotRadius = size > 50.0f ? 1.2f : 0.8f;
+
+        bool isSettlement = biome == "Settlements" || biome == "Campsite" || biome == "Castle" || biome == "City" || biome == "Settlement" || biome == "Castle Gate" || biome == "City Gate";
+
+        if (biome == "Ruins")
+        {
+            DrawDitheredPolygon(vertices, Color.FromHtml("#94a3b8"), dotRadius, step);
+        }
+        else if (isSettlement)
+        {
+            DrawDitheredPolygon(vertices, Color.FromHtml("#ca8a04"), dotRadius, step);
+        }
+        else if (biome == "Pillars" || biome == "Dungeon Gate" || biome == "Dungeon")
+        {
+            DrawDitheredPolygon(vertices, Color.FromHtml("#0f172a"), dotRadius, step);
+        }
+    }
+
+    private void DrawDitheredPolygon(Vector2[] vertices, Color dotColor, float dotRadius, int step)
+    {
+        float minX = float.MaxValue, maxX = float.MinValue;
+        float minY = float.MaxValue, maxY = float.MinValue;
+        foreach (var v in vertices)
+        {
+            if (v.X < minX) minX = v.X;
+            if (v.X > maxX) maxX = v.X;
+            if (v.Y < minY) minY = v.Y;
+            if (v.Y > maxY) maxY = v.Y;
+        }
+
+        for (float y = minY; y <= maxY; y += step)
+        {
+            // Stagger alternating rows for a checkerboard/hexagonal pattern
+            float offsetX = ((int)Mathf.Round(y / step) % 2 == 0) ? 0 : step / 2.0f;
+            for (float x = minX - offsetX; x <= maxX; x += step)
+            {
+                Vector2 point = new Vector2(x + offsetX, y);
+                if (Geometry2D.IsPointInPolygon(point, vertices))
+                {
+                    DrawCircle(point, dotRadius, dotColor);
+                }
+            }
+        }
     }
     #endregion
 }

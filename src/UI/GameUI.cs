@@ -11,6 +11,7 @@ public partial class GameUI : CanvasLayer
     [Signal] public delegate void CameraControlPressedEventHandler(string command); // "in", "out", "reset"
     [Signal] public delegate void ActionButtonPressedEventHandler();
     [Signal] public delegate void RegenPressedEventHandler();
+    [Signal] public delegate void NextDayPressedEventHandler();
 
     // Node References
     private Button _btnWorld = null!;
@@ -18,6 +19,7 @@ public partial class GameUI : CanvasLayer
     private Button _btnLocal = null!;
     private Label _arrow2 = null!;
     private Button _btnDungeon = null!;
+    private Button _btnNextDay = null!;
 
     private Label _scaleVal = null!;
     private Label _coordsVal = null!;
@@ -58,6 +60,14 @@ public partial class GameUI : CanvasLayer
         container.AddChild(btnRegen);
         btnRegen.Pressed += () => EmitSignal(SignalName.RegenPressed);
 
+        // Create Advance Day button dynamically
+        _btnNextDay = new Button();
+        _btnNextDay.Text = "Next Day";
+        _btnNextDay.Name = "BtnNextDay";
+        _btnNextDay.Visible = false; // Start hidden (regional scale)
+        container.AddChild(_btnNextDay);
+        _btnNextDay.Pressed += () => EmitSignal(SignalName.NextDayPressed);
+
         // Bind Inspector
         _scaleVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/ScaleVal");
         _coordsVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/CoordsVal");
@@ -87,8 +97,11 @@ public partial class GameUI : CanvasLayer
         string? selectedName,
         string? coordsText,
         string? biomeText,
-        int activeDungeonLevel)
+        int activeDungeonLevel,
+        string? customDetails = null)
     {
+        _btnNextDay.Visible = (scale == Common.MapScale.Local);
+
         // 1. Breadcrumbs Visibility
         switch (scale)
         {
@@ -155,7 +168,7 @@ public partial class GameUI : CanvasLayer
         }
         else if (scale == Common.MapScale.Local)
         {
-            _detailsVal.Text = "Subhex: 1 Mile Scale";
+            _detailsVal.Text = customDetails ?? "Subhex: 1 Mile Scale";
             if (selectedName != null && selectedName.Contains("Dungeon"))
             {
                 _btnAction.Visible = true;

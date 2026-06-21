@@ -389,4 +389,51 @@ public static class MockGenerator
             return !(X + W < other.X || other.X + other.W < X || Y + H < other.Y || other.Y + other.H < Y);
         }
     }
+
+    public static List<Hazard> GenerateLocalHazards(HexCoords regCoords, Dictionary<HexCoords, HexTile> localMap)
+    {
+        var hazards = new List<Hazard>();
+        int numHazards = Rand.Next(1, 7); // 1 to 6 hazards
+        
+        for (int i = 0; i < numHazards; i++)
+        {
+            int hazardType = Rand.Next(1, 7); // 1 to 6 hazard type
+            var hazard = new Hazard(hazardType, HexCoords.Zero) { IsActive = false };
+            DropHazardRandomly(localMap, hazards, hazard);
+            hazards.Add(hazard);
+        }
+        
+        return hazards;
+    }
+
+    public static void DropHazardRandomly(Dictionary<HexCoords, HexTile> localMap, List<Hazard> hazards, Hazard hazard)
+    {
+        var eligibleCoords = new List<HexCoords>();
+        foreach (var coords in localMap.Keys)
+        {
+            bool occupied = false;
+            foreach (var h in hazards)
+            {
+                if (h != hazard && h.IsActive && h.Coords == coords)
+                {
+                    occupied = true;
+                    break;
+                }
+            }
+            if (!occupied)
+            {
+                eligibleCoords.Add(coords);
+            }
+        }
+
+        if (eligibleCoords.Count > 0)
+        {
+            hazard.Coords = eligibleCoords[Rand.Next(eligibleCoords.Count)];
+            hazard.IsActive = true;
+        }
+        else
+        {
+            hazard.IsActive = false;
+        }
+    }
 }

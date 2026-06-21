@@ -14,6 +14,9 @@ public class MapData
     // Maps a Regional Hex coordinate to its sub-grid of Local Hexes
     public Dictionary<HexCoords, Dictionary<HexCoords, HexTile>> LocalMaps { get; } = new();
 
+    // Maps a Regional Hex coordinate to its list of mobile Local Hazards
+    public Dictionary<HexCoords, List<Hazard>> LocalHazards { get; } = new();
+
     // Map dungeon entrances to their specific levels
     // Maps Local Hex coordinate (within a specific regional hex) -> Dungeon levels
     // We can use a composite key (RegionalCoords, LocalCoords) to uniquely identify a dungeon
@@ -32,6 +35,16 @@ public class MapData
             LocalMaps[regCoords] = localMap;
         }
         return localMap;
+    }
+
+    public List<Hazard> GetOrCreateLocalHazards(HexCoords regCoords, System.Func<HexCoords, List<Hazard>> generator)
+    {
+        if (!LocalHazards.TryGetValue(regCoords, out var hazards))
+        {
+            hazards = generator(regCoords);
+            LocalHazards[regCoords] = hazards;
+        }
+        return hazards;
     }
 
     public List<DungeonLevel> GetOrCreateDungeon(HexCoords regCoords, HexCoords localCoords, System.Func<List<DungeonLevel>> generator)

@@ -23,8 +23,11 @@ public partial class Main : Node2D
         // 2. Pre-generate all local maps upfront (so the entire world state is fully created)
         foreach (var regTile in _mapData.RegionalTiles.Values)
         {
-            _mapData.GetOrCreateLocalMap(regTile.Coords, (rc) => 
+            var localMap = _mapData.GetOrCreateLocalMap(regTile.Coords, (rc) => 
                 Generation.MockGenerator.GenerateLocalMap(rc, regTile)
+            );
+            _mapData.GetOrCreateLocalHazards(regTile.Coords, (rc) =>
+                Generation.MockGenerator.GenerateLocalHazards(rc, localMap)
             );
         }
 
@@ -59,6 +62,7 @@ public partial class Main : Node2D
         _ui.CameraControlPressed += OnCameraControlPressed;
         _ui.ActionButtonPressed += OnActionButtonPressed;
         _ui.RegenPressed += OnRegenPressed;
+        _ui.NextDayPressed += OnNextDayPressed;
 
         // 6. Set Initial State
         EnterRegionalScale();
@@ -94,6 +98,10 @@ public partial class Main : Node2D
                 1
             );
         }
+        else
+        {
+            _ui.UpdateUIState(MapScale.Regional, null, null, null, 1);
+        }
     }
 
     private void OnLocalSelected(int q, int r)
@@ -103,17 +111,47 @@ public partial class Main : Node2D
         var localMap = _mapData.GetOrCreateLocalMap(_renderer.SelectedRegCoords.Value, (rc) => 
             Generation.MockGenerator.GenerateLocalMap(rc, parentTile)
         );
+        var hazards = _mapData.GetOrCreateLocalHazards(_renderer.SelectedRegCoords.Value, (rc) =>
+            Generation.MockGenerator.GenerateLocalHazards(rc, localMap)
+        );
 
         var coords = new HexCoords(q, r);
         if (localMap.TryGetValue(coords, out var tile))
         {
+            // Find if there is an active hazard on this subhex
+            Hazard? activeHazard = null;
+            foreach (var h in hazards)
+            {
+                if (h.IsActive && h.Coords == coords)
+                {
+                    activeHazard = h;
+                    break;
+                }
+            }
+
+            string? selectedName = tile.Landmark == "None" ? null : tile.Name;
+            string? customDetails = null;
+
+            if (activeHazard != null)
+            {
+                selectedName = selectedName != null 
+                    ? $"{selectedName} (HAZARD: {activeHazard.Name})" 
+                    : $"HAZARD: {activeHazard.Name}";
+                customDetails = $"{activeHazard.Name}: {activeHazard.Description}";
+            }
+
             _ui.UpdateUIState(
                 MapScale.Local,
-                tile.Landmark == "None" ? null : tile.Name,
+                selectedName,
                 $"Q: {q}, R: {r}",
                 tile.Biome,
-                1
+                1,
+                customDetails
             );
+        }
+        else
+        {
+            _ui.UpdateUIState(MapScale.Local, null, null, null, 1);
         }
     }
 
@@ -149,6 +187,10 @@ public partial class Main : Node2D
                 biomeText,
                 _renderer.ActiveDungeonLevel
             );
+        }
+        else
+        {
+            _ui.UpdateUIState(MapScale.Dungeon, null, null, null, _renderer.ActiveDungeonLevel);
         }
     }
 
@@ -213,8 +255,11 @@ public partial class Main : Node2D
         // 2. Pre-generate all local maps upfront (so the entire world state is fully created)
         foreach (var regTile in _mapData.RegionalTiles.Values)
         {
-            _mapData.GetOrCreateLocalMap(regTile.Coords, (rc) => 
+            var localMap = _mapData.GetOrCreateLocalMap(regTile.Coords, (rc) => 
                 Generation.MockGenerator.GenerateLocalMap(rc, regTile)
+            );
+            _mapData.GetOrCreateLocalHazards(regTile.Coords, (rc) =>
+                Generation.MockGenerator.GenerateLocalHazards(rc, localMap)
             );
         }
 
@@ -435,4 +480,89 @@ public partial class Main : Node2D
             }
         }
     }
+
+    private void OnNextDayPressed()
+    {
+        AdvanceDay();
+    }
+
+    private void AdvanceDay()
+    {
+        if (!_renderer.SelectedRegCoords.HasValue) return;
+        var regCoords = _renderer.SelectedRegCoords.Value;
+
+        var parentTile = _mapData.RegionalTiles[regCoords];
+        var localMap = _mapData.GetOrCreateLocalMap(regCoords, (rc) => 
+            Generation.MockGenerator.GenerateLocalMap(rc, parentTile)
+        );
+        var hazards = _mapData.GetOrCreateLocalHazards(regCoords, (rc) =>
+            Generation.MockGenerator.GenerateLocalHazards(rc, localMap)
+        );
+
+        var random = new Random();
+
+        foreach (var hazard in hazards)
+        {
+            if (!hazard.IsActive) continue;
+
+            // 1. Roll 1d6 for movement direction (1-based index)
+            int moveRoll = random.Next(1, 7);
+            var directionVector = FlatTopDirections[moveRoll - 1];
+
+            // 2. Compute target coordinate
+            var targetCoords = new HexCoords(
+                hazard.Coords.Q + directionVector.Q,
+                hazard.Coords.R + directionVector.R
+            );
+
+            // 3. Check boundaries (radius 3 constraint: |q| <= 3, |r| <= 3, |q+r| <= 3)
+            if (Math.Abs(targetCoords.Q) > 3 || Math.Abs(targetCoords.R) > 3 || Math.Abs(targetCoords.S) > 3)
+            {
+                // Off edge: Re-drop
+                Generation.MockGenerator.DropHazardRandomly(localMap, hazards, hazard);
+                continue;
+            }
+
+            // 4. Check for collision with another active hazard
+            bool collisionDetected = false;
+            foreach (var other in hazards)
+            {
+                if (other.Id != hazard.Id && other.IsActive && other.Coords == targetCoords)
+                {
+                    collisionDetected = true;
+                    break;
+                }
+            }
+
+            if (collisionDetected)
+            {
+                // Bump: Re-drop
+                Generation.MockGenerator.DropHazardRandomly(localMap, hazards, hazard);
+            }
+            else
+            {
+                // Move successful
+                hazard.Coords = targetCoords;
+            }
+        }
+
+        // Force redraw to update graphics
+        _renderer.QueueRedraw();
+
+        // Update UI details for selected tile in case hazard moved onto or off of it
+        if (_renderer.SelectedLocalCoords.HasValue)
+        {
+            OnLocalSelected(_renderer.SelectedLocalCoords.Value.Q, _renderer.SelectedLocalCoords.Value.R);
+        }
+    }
+
+    private static readonly HexCoords[] FlatTopDirections = new[]
+    {
+        new HexCoords(1, -1),  // 1: North-East
+        new HexCoords(1, 0),   // 2: East
+        new HexCoords(0, 1),   // 3: South-East
+        new HexCoords(-1, 1),  // 4: South-West
+        new HexCoords(-1, 0),  // 5: West
+        new HexCoords(0, -1)   // 6: North-West
+    };
 }
