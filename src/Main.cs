@@ -69,6 +69,11 @@ public partial class Main : Node2D
         _ui.NextDayPressed += OnNextDayPressed;
         _ui.ForcedMarchToggled += OnForcedMarchToggled;
         _ui.RecenterPressed += OnRecenterPressed;
+        _ui.TradePressed += OnTradePressed;
+        _ui.BuyRationPressed += OnBuyRationPressed;
+        _ui.BuyHealPressed += OnBuyHealPressed;
+        _ui.BuyExhaustionPressed += OnBuyExhaustionPressed;
+        _ui.HireMercenaryPressed += OnHireMercenaryPressed;
 
         // 6. Set Initial State
         EnterRegionalScale();
@@ -307,13 +312,24 @@ public partial class Main : Node2D
                 customDetails = $"{activeHazard.Name}: {activeHazard.Description}";
             }
 
+            bool isPartyOnSettlement = false;
+            if (coords == _partyState.LocalCoords)
+            {
+                string b = tile.Biome;
+                if (b == "Castle" || b == "City" || b == "Campsite" || b == "Settlement")
+                {
+                    isPartyOnSettlement = true;
+                }
+            }
+
             _ui.UpdateUIState(
                 MapScale.Local,
                 selectedName,
                 $"Q: {q}, R: {r}",
                 tile.Biome,
                 1,
-                customDetails
+                customDetails,
+                isPartyOnSettlement: isPartyOnSettlement
             );
         }
         else
@@ -531,6 +547,65 @@ public partial class Main : Node2D
         else if (_renderer.CurrentScale == MapScale.Dungeon)
         {
             _camera.CenterOn(new Vector2(-60, 0), 1.1f);
+        }
+    }
+
+    private void OnTradePressed()
+    {
+        _ui.ShowShop(_partyState);
+    }
+
+    private void OnBuyRationPressed()
+    {
+        if (_partyState.Gold >= 5)
+        {
+            _partyState.Gold -= 5;
+            _partyState.Rations += 1;
+            _partyState.DailyLog = $"🛍️ PURCHASE: Bought 1 Ration for 5 Gold. Purse: {_partyState.Gold}g, Rations: {_partyState.Rations}.";
+            _ui.ShowShop(_partyState); // Refresh shop
+            UpdatePartyStatusUI();
+        }
+    }
+
+    private void OnBuyHealPressed(string characterName)
+    {
+        var member = _partyState.Members.Find(m => m.Name == characterName);
+        if (member != null && member.IsAlive && _partyState.Gold >= 15 && member.HP < member.MaxHP)
+        {
+            _partyState.Gold -= 15;
+            int hpHealed = Math.Min(10, member.MaxHP - member.HP);
+            member.HP += hpHealed;
+            _partyState.DailyLog = $"🛍️ PURCHASE: Healed {member.Name} for {hpHealed} HP (Cost: 15 Gold). Purse: {_partyState.Gold}g.";
+            _ui.ShowShop(_partyState); // Refresh shop
+            UpdatePartyStatusUI();
+        }
+    }
+
+    private void OnBuyExhaustionPressed(string characterName)
+    {
+        var member = _partyState.Members.Find(m => m.Name == characterName);
+        if (member != null && member.IsAlive && _partyState.Gold >= 20 && member.Exhaustion > 0)
+        {
+            _partyState.Gold -= 20;
+            member.Exhaustion -= 1;
+            _partyState.DailyLog = $"🛍️ PURCHASE: Restored 1 exhaustion level for {member.Name} (Cost: 20 Gold). Purse: {_partyState.Gold}g.";
+            _ui.ShowShop(_partyState); // Refresh shop
+            UpdatePartyStatusUI();
+        }
+    }
+
+    private void OnHireMercenaryPressed(string characterName)
+    {
+        var member = _partyState.Members.Find(m => m.Name == characterName);
+        if (member != null && !member.IsAlive && _partyState.Gold >= 50)
+        {
+            _partyState.Gold -= 50;
+            member.IsAlive = true;
+            member.HP = member.MaxHP;
+            member.Exhaustion = 0;
+            _partyState.DailyLog = $"🛍️ HIRE: Recruited {member.Name} as a new mercenary for 50 Gold. Purse: {_partyState.Gold}g.";
+            _ui.ShowShop(_partyState); // Refresh shop
+            UpdatePartyStatusUI();
         }
     }
 

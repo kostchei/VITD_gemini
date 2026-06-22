@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using VastDark.Models;
 
 namespace VastDark.UI;
 
@@ -14,6 +15,11 @@ public partial class GameUI : CanvasLayer
     [Signal] public delegate void NextDayPressedEventHandler();
     [Signal] public delegate void ForcedMarchToggledEventHandler(bool pressed);
     [Signal] public delegate void RecenterPressedEventHandler();
+    [Signal] public delegate void TradePressedEventHandler();
+    [Signal] public delegate void BuyRationPressedEventHandler();
+    [Signal] public delegate void BuyHealPressedEventHandler(string characterName);
+    [Signal] public delegate void BuyExhaustionPressedEventHandler(string characterName);
+    [Signal] public delegate void HireMercenaryPressedEventHandler(string characterName);
 
     // Node References
     private Button _btnWorld = null!;
@@ -24,6 +30,7 @@ public partial class GameUI : CanvasLayer
     private Button _btnNextDay = null!;
     private CheckButton _btnForcedMarch = null!;
     private Button _btnRecenter = null!;
+    private Button _btnTrade = null!;
 
     private Label _scaleVal = null!;
     private Label _coordsVal = null!;
@@ -100,6 +107,14 @@ public partial class GameUI : CanvasLayer
         inspectorContainer.AddChild(_btnRecenter);
         _btnRecenter.Pressed += () => EmitSignal(SignalName.RecenterPressed);
 
+        // Create Trade button dynamically
+        _btnTrade = new Button();
+        _btnTrade.Text = "🛍️ Open Settlement Shop";
+        _btnTrade.Name = "BtnTrade";
+        _btnTrade.Visible = false;
+        inspectorContainer.AddChild(_btnTrade);
+        _btnTrade.Pressed += () => EmitSignal(SignalName.TradePressed);
+
         // Bind Inspector
         _scaleVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/ScaleVal");
         _coordsVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/CoordsVal");
@@ -151,13 +166,20 @@ public partial class GameUI : CanvasLayer
         string? coordsText,
         string? biomeText,
         int activeDungeonLevel,
-        string? customDetails = null)
+        string? customDetails = null,
+        bool isPartyOnSettlement = false)
     {
+        if (scale != Common.MapScale.Local)
+        {
+            HideShop();
+        }
+
         _btnNextDay.Visible = (scale == Common.MapScale.Local);
         _btnForcedMarch.Visible = (scale == Common.MapScale.Local);
         _btnRecenter.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
         _lblPartyStatus.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
         _lblDailyLog.Visible = (scale == Common.MapScale.Local);
+        _btnTrade.Visible = (scale == Common.MapScale.Local && isPartyOnSettlement);
 
         // 1. Breadcrumbs Visibility
         switch (scale)
@@ -250,6 +272,159 @@ public partial class GameUI : CanvasLayer
         _coordsVal.Text = coords;
         _biomeVal.Text = biome;
         _detailsVal.Text = details;
+    }
+
+    private PanelContainer? _shopPanel = null;
+    private Label? _lblShopGold = null;
+    private VBoxContainer? _shopItemsContainer = null;
+
+    public void ShowShop(PartyState partyState)
+    {
+        if (_shopPanel != null)
+        {
+            _shopPanel.QueueFree();
+        }
+
+        // Create Panel Container
+        _shopPanel = new PanelContainer();
+        _shopPanel.Name = "ShopPanelOverlay";
+        
+        // Premium Dark Theme styling using StyleBoxFlat
+        var style = new StyleBoxFlat();
+        style.BgColor = Color.FromHtml("#0f172ae6"); // Slate dark with opacity
+        style.BorderColor = Color.FromHtml("#3b82f6"); // Neon blue border
+        style.SetBorderWidthAll(2);
+        style.CornerRadiusTopLeft = 12;
+        style.CornerRadiusTopRight = 12;
+        style.CornerRadiusBottomLeft = 12;
+        style.CornerRadiusBottomRight = 12;
+        style.ContentMarginLeft = 25;
+        style.ContentMarginTop = 25;
+        style.ContentMarginRight = 25;
+        style.ContentMarginBottom = 25;
+        _shopPanel.AddThemeStyleboxOverride("panel", style);
+
+        // Center it
+        _shopPanel.CustomMinimumSize = new Vector2(450, 400);
+        _shopPanel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.Center, Control.LayoutPresetMode.Minsize, 0);
+
+        // Add to CanvasLayer
+        AddChild(_shopPanel);
+
+        var mainVBox = new VBoxContainer();
+        mainVBox.AddThemeConstantOverride("separation", 15);
+        _shopPanel.AddChild(mainVBox);
+
+        // Title
+        var title = new Label();
+        title.Text = "🛍️ SETTLEMENT TRADING POST";
+        title.ThemeTypeVariation = "HeaderMedium";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        mainVBox.AddChild(title);
+
+        var sep1 = new HSeparator();
+        mainVBox.AddChild(sep1);
+
+        // Gold display
+        _lblShopGold = new Label();
+        _lblShopGold.Text = $"Your Purse: {partyState.Gold} Gold   |   Rations: {partyState.Rations}";
+        _lblShopGold.HorizontalAlignment = HorizontalAlignment.Center;
+        mainVBox.AddChild(_lblShopGold);
+
+        // Items Container
+        _shopItemsContainer = new VBoxContainer();
+        _shopItemsContainer.AddThemeConstantOverride("separation", 10);
+        mainVBox.AddChild(_shopItemsContainer);
+
+        // Refresh/populate items
+        PopulateShopItems(partyState);
+
+        // Close Button
+        var btnClose = new Button();
+        btnClose.Text = "Exit Shop";
+        btnClose.Pressed += HideShop;
+        mainVBox.AddChild(btnClose);
+    }
+
+    public void PopulateShopItems(PartyState partyState)
+    {
+        if (_shopItemsContainer == null) return;
+
+        // Clear existing items
+        foreach (var child in _shopItemsContainer.GetChildren())
+        {
+            child.QueueFree();
+        }
+
+        // Item 1: Rations (5 Gold)
+        var rationHBox = new HBoxContainer();
+        var lblRation = new Label();
+        lblRation.Text = "Rations (Pack of 1) - Cost: 5 Gold";
+        lblRation.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        rationHBox.AddChild(lblRation);
+
+        var btnBuyRation = new Button();
+        btnBuyRation.Text = "Buy";
+        btnBuyRation.Disabled = (partyState.Gold < 5);
+        btnBuyRation.Pressed += () => EmitSignal(SignalName.BuyRationPressed);
+        rationHBox.AddChild(btnBuyRation);
+        _shopItemsContainer.AddChild(rationHBox);
+
+        // Separator
+        _shopItemsContainer.AddChild(new HSeparator());
+
+        // Characters healing and recovery
+        var charactersTitle = new Label();
+        charactersTitle.Text = "🏥 Temples & Inns (Character Services):";
+        _shopItemsContainer.AddChild(charactersTitle);
+
+        foreach (var member in partyState.Members)
+        {
+            var charHBox = new HBoxContainer();
+            charHBox.AddThemeConstantOverride("separation", 10);
+
+            var lblCharName = new Label();
+            lblCharName.Text = $"{member.Name} ({(member.IsAlive ? $"HP: {member.HP}/{member.MaxHP}, Exh: {member.Exhaustion}" : "☠️ DEAD")})";
+            lblCharName.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            charHBox.AddChild(lblCharName);
+
+            if (member.IsAlive)
+            {
+                // Heal Button (15 Gold)
+                var btnHeal = new Button();
+                btnHeal.Text = "Heal 10 HP (15g)";
+                btnHeal.Disabled = (partyState.Gold < 15 || member.HP >= member.MaxHP);
+                btnHeal.Pressed += () => EmitSignal(SignalName.BuyHealPressed, member.Name);
+                charHBox.AddChild(btnHeal);
+
+                // Recover Exhaustion Button (20 Gold)
+                var btnExh = new Button();
+                btnExh.Text = "Rest Exh (20g)";
+                btnExh.Disabled = (partyState.Gold < 20 || member.Exhaustion == 0);
+                btnExh.Pressed += () => EmitSignal(SignalName.BuyExhaustionPressed, member.Name);
+                charHBox.AddChild(btnExh);
+            }
+            else
+            {
+                // Revive / Hire Button (50 Gold)
+                var btnRevive = new Button();
+                btnRevive.Text = "Hire Recruit (50g)";
+                btnRevive.Disabled = (partyState.Gold < 50);
+                btnRevive.Pressed += () => EmitSignal(SignalName.HireMercenaryPressed, member.Name);
+                charHBox.AddChild(btnRevive);
+            }
+
+            _shopItemsContainer.AddChild(charHBox);
+        }
+    }
+
+    public void HideShop()
+    {
+        if (_shopPanel != null)
+        {
+            _shopPanel.QueueFree();
+            _shopPanel = null;
+        }
     }
 
     public void UpdatePartyUI(string partyStatus, string dailyLog)
