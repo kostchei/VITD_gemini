@@ -19,6 +19,7 @@ public class DungeonLevel
     public int Width { get; }
     public int Height { get; }
     public DungeonCellType[,] Cells { get; }
+    public bool[,] Revealed { get; }
 
     public DungeonLevel(int levelNumber, int width = 24, int height = 18)
     {
@@ -26,6 +27,7 @@ public class DungeonLevel
         Width = width;
         Height = height;
         Cells = new DungeonCellType[width, height];
+        Revealed = new bool[width, height];
         
         // Initialize all to Wall
         for (int x = 0; x < width; x++)

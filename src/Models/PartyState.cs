@@ -20,6 +20,8 @@ public class PartyState
     public int DailyMovementLimit { get; set; } = 18;
     public int ActiveWeatherEncounterMod { get; set; } = 0;
     public bool ForcedMarchActive { get; set; } = false;
+    public int DungeonX { get; set; } = -1;
+    public int DungeonY { get; set; } = -1;
 
     public PartyState()
     {

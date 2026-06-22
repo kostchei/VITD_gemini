@@ -37,6 +37,8 @@ public partial class MapRenderer : Node2D
     public Vector2I? HoveredDungeonCell { get; set; }
     public Vector2I? SelectedDungeonCell { get; set; }
     public int ActiveDungeonLevel { get; private set; } = 1;
+    public int PartyDungeonX { get; set; } = -1;
+    public int PartyDungeonY { get; set; } = -1;
 
     private float _time = 0.0f;
 
@@ -476,41 +478,65 @@ public partial class MapRenderer : Node2D
             for (int y = 0; y < level.Height; y++)
             {
                 var cellType = level.Cells[x, y];
+                bool revealed = level.Revealed[x, y];
                 Vector2 cellPos = gridOrigin + new Vector2(x * DungeonCellSize, y * DungeonCellSize);
                 Rect2 cellRect = new Rect2(cellPos, new Vector2(DungeonCellSize, DungeonCellSize));
 
                 // Determine Cell Color
-                Color fillCol = cellType switch
+                Color fillCol;
+                if (revealed)
                 {
-                    DungeonCellType.Wall => Color.FromHtml("#1a1c23"),
-                    DungeonCellType.Floor => Color.FromHtml("#2c303c"),
-                    DungeonCellType.Room => Color.FromHtml("#383e4e"),
-                    DungeonCellType.Corridor => Color.FromHtml("#262933"),
-                    DungeonCellType.Door => Color.FromHtml("#4b5320"),
-                    DungeonCellType.StairsUp => Color.FromHtml("#0284c7"), // Blue
-                    DungeonCellType.StairsDown => Color.FromHtml("#0369a1"), // Dark Blue
-                    DungeonCellType.Chest => Color.FromHtml("#ca8a04"), // Gold
-                    DungeonCellType.Encounter => Color.FromHtml("#b91c1c"), // Red
-                    _ => Color.FromHtml("#000000")
-                };
+                    fillCol = cellType switch
+                    {
+                        DungeonCellType.Wall => Color.FromHtml("#1a1c23"),
+                        DungeonCellType.Floor => Color.FromHtml("#2c303c"),
+                        DungeonCellType.Room => Color.FromHtml("#383e4e"),
+                        DungeonCellType.Corridor => Color.FromHtml("#262933"),
+                        DungeonCellType.Door => Color.FromHtml("#4b5320"),
+                        DungeonCellType.StairsUp => Color.FromHtml("#0284c7"), // Blue
+                        DungeonCellType.StairsDown => Color.FromHtml("#0369a1"), // Dark Blue
+                        DungeonCellType.Chest => Color.FromHtml("#ca8a04"), // Gold
+                        DungeonCellType.Encounter => Color.FromHtml("#b91c1c"), // Red
+                        _ => Color.FromHtml("#000000")
+                    };
+                }
+                else
+                {
+                    fillCol = Color.FromHtml("#020205"); // Fog of War black
+                }
 
                 // Draw Rect
                 DrawRect(cellRect, fillCol);
                 
                 // Draw inner borders for rooms/floors
-                if (cellType != DungeonCellType.Wall)
+                if (revealed && cellType != DungeonCellType.Wall)
                 {
                     DrawRect(cellRect, LineColor * 0.8f, false, 1.0f);
                 }
 
                 // Draw Vector Icons for features
-                Vector2 cellCenter = cellPos + new Vector2(DungeonCellSize / 2.0f, DungeonCellSize / 2.0f);
-                DrawDungeonSymbol(cellCenter, cellType);
+                if (revealed)
+                {
+                    Vector2 cellCenter = cellPos + new Vector2(DungeonCellSize / 2.0f, DungeonCellSize / 2.0f);
+                    DrawDungeonSymbol(cellCenter, cellType);
+                }
             }
         }
 
+        // Draw Party Token
+        if (PartyDungeonX >= 0 && PartyDungeonY >= 0)
+        {
+            Vector2 cellPos = gridOrigin + new Vector2(PartyDungeonX * DungeonCellSize, PartyDungeonY * DungeonCellSize);
+            Vector2 cellCenter = cellPos + new Vector2(DungeonCellSize / 2.0f, DungeonCellSize / 2.0f);
+            
+            // Neon Green outer glow
+            DrawCircle(cellCenter, DungeonCellSize * 0.35f, Color.FromHtml("#22c55e"));
+            // White core
+            DrawCircle(cellCenter, DungeonCellSize * 0.15f, Color.FromHtml("#ffffff"));
+        }
+
         // Draw Hover cell outline
-        if (HoveredDungeonCell.HasValue)
+        if (HoveredDungeonCell.HasValue && level.Revealed[HoveredDungeonCell.Value.X, HoveredDungeonCell.Value.Y])
         {
             Vector2 cellPos = gridOrigin + new Vector2(HoveredDungeonCell.Value.X * DungeonCellSize, HoveredDungeonCell.Value.Y * DungeonCellSize);
             Rect2 cellRect = new Rect2(cellPos, new Vector2(DungeonCellSize, DungeonCellSize));
@@ -521,7 +547,7 @@ public partial class MapRenderer : Node2D
         }
 
         // Draw Selected cell outline
-        if (SelectedDungeonCell.HasValue)
+        if (SelectedDungeonCell.HasValue && level.Revealed[SelectedDungeonCell.Value.X, SelectedDungeonCell.Value.Y])
         {
             Vector2 cellPos = gridOrigin + new Vector2(SelectedDungeonCell.Value.X * DungeonCellSize, SelectedDungeonCell.Value.Y * DungeonCellSize);
             Rect2 cellRect = new Rect2(cellPos, new Vector2(DungeonCellSize, DungeonCellSize));

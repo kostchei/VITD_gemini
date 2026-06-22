@@ -97,6 +97,106 @@ public partial class Main : Node2D
         }
     }
 
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        if (_renderer.CurrentScale != MapScale.Dungeon) return;
+
+        if (@event is InputEventKey keyEvent && keyEvent.Pressed)
+        {
+            int dx = 0;
+            int dy = 0;
+
+            if (keyEvent.Keycode == Key.W || keyEvent.Keycode == Key.Up)
+            {
+                dy = -1;
+            }
+            else if (keyEvent.Keycode == Key.S || keyEvent.Keycode == Key.Down)
+            {
+                dy = 1;
+            }
+            else if (keyEvent.Keycode == Key.A || keyEvent.Keycode == Key.Left)
+            {
+                dx = -1;
+            }
+            else if (keyEvent.Keycode == Key.D || keyEvent.Keycode == Key.Right)
+            {
+                dx = 1;
+            }
+
+            if (dx != 0 || dy != 0)
+            {
+                MoveDungeonParty(dx, dy);
+            }
+        }
+    }
+
+    private void MoveDungeonParty(int dx, int dy)
+    {
+        if (!_renderer.SelectedRegCoords.HasValue || !_renderer.SelectedLocalCoords.HasValue) return;
+
+        var levels = _mapData.GetOrCreateDungeon(_renderer.SelectedRegCoords.Value, _renderer.SelectedLocalCoords.Value, () => 
+            Generation.MockGenerator.GenerateDungeonLevels()
+        );
+        var level = levels[_renderer.ActiveDungeonLevel - 1];
+
+        int tx = _partyState.DungeonX + dx;
+        int ty = _partyState.DungeonY + dy;
+
+        if (tx >= 0 && tx < level.Width && ty >= 0 && ty < level.Height)
+        {
+            var cellType = level.Cells[tx, ty];
+            if (cellType != DungeonCellType.Wall)
+            {
+                // Move party
+                _partyState.DungeonX = tx;
+                _partyState.DungeonY = ty;
+                _renderer.PartyDungeonX = tx;
+                _renderer.PartyDungeonY = ty;
+
+                // Reveal fog of war
+                RevealDungeonCells(level, tx, ty);
+
+                // Auto select cell
+                _renderer.SelectedDungeonCell = new Vector2I(tx, ty);
+                OnDungeonSelected(tx, ty);
+
+                // Check stairs interaction and other encounters
+                string actionMsg = "";
+                if (cellType == DungeonCellType.StairsUp)
+                {
+                    actionMsg = "\n👣 Standing on STAIRS UP. Click 'Exit Dungeon' to return to surface.";
+                }
+                else if (cellType == DungeonCellType.StairsDown)
+                {
+                    actionMsg = "\n👣 Standing on STAIRS DOWN. Use the Floor Panel on the left to descend to the next level.";
+                }
+                else if (cellType == DungeonCellType.Chest)
+                {
+                    actionMsg = "\n🎁 Found a Loot Chest! (Interaction coming in next feature).";
+                }
+                else if (cellType == DungeonCellType.Encounter)
+                {
+                    actionMsg = "\n💀 Encounter ahead! (Interaction coming in next feature).";
+                }
+
+                _partyState.DailyLog = $"Party moved inside dungeon to X: {tx}, Y: {ty}.{actionMsg}";
+                UpdatePartyStatusUI();
+                _renderer.QueueRedraw();
+            }
+        }
+    }
+
+    private void RevealDungeonCells(DungeonLevel level, int px, int py)
+    {
+        for (int x = Math.Max(0, px - 2); x <= Math.Min(level.Width - 1, px + 2); x++)
+        {
+            for (int y = Math.Max(0, py - 2); y <= Math.Min(level.Height - 1, py + 2); y++)
+            {
+                level.Revealed[x, y] = true;
+            }
+        }
+    }
+
     private void OnRegionalSelected(int q, int r)
     {
         var coords = new HexCoords(q, r);
