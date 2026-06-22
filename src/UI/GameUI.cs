@@ -12,6 +12,8 @@ public partial class GameUI : CanvasLayer
     [Signal] public delegate void ActionButtonPressedEventHandler();
     [Signal] public delegate void RegenPressedEventHandler();
     [Signal] public delegate void NextDayPressedEventHandler();
+    [Signal] public delegate void ForcedMarchToggledEventHandler(bool pressed);
+    [Signal] public delegate void RecenterPressedEventHandler();
 
     // Node References
     private Button _btnWorld = null!;
@@ -20,6 +22,8 @@ public partial class GameUI : CanvasLayer
     private Label _arrow2 = null!;
     private Button _btnDungeon = null!;
     private Button _btnNextDay = null!;
+    private CheckButton _btnForcedMarch = null!;
+    private Button _btnRecenter = null!;
 
     private Label _scaleVal = null!;
     private Label _coordsVal = null!;
@@ -27,6 +31,16 @@ public partial class GameUI : CanvasLayer
     private Label _landmarkVal = null!;
     private Label _detailsVal = null!;
     private Button _btnAction = null!;
+
+    private Label _lblPartyStatus = null!;
+    private Label _lblDailyLog = null!;
+
+    public bool IsForcedMarchToggled => _btnForcedMarch.ButtonPressed;
+
+    public void SetForcedMarchToggled(bool toggled)
+    {
+        _btnForcedMarch.SetPressedNoSignal(toggled);
+    }
 
     private Control _floorPanel = null!;
     private Button[] _floorButtons = new Button[6];
@@ -60,13 +74,31 @@ public partial class GameUI : CanvasLayer
         container.AddChild(btnRegen);
         btnRegen.Pressed += () => EmitSignal(SignalName.RegenPressed);
 
+        var inspectorContainer = GetNode<VBoxContainer>("InspectorPanel/MarginContainer/VBoxContainer");
+
         // Create Advance Day button dynamically
         _btnNextDay = new Button();
-        _btnNextDay.Text = "Next Day";
+        _btnNextDay.Text = "Rest (Next Day)";
         _btnNextDay.Name = "BtnNextDay";
         _btnNextDay.Visible = false; // Start hidden (regional scale)
-        container.AddChild(_btnNextDay);
+        inspectorContainer.AddChild(_btnNextDay);
         _btnNextDay.Pressed += () => EmitSignal(SignalName.NextDayPressed);
+
+        // Create Forced March check button dynamically
+        _btnForcedMarch = new CheckButton();
+        _btnForcedMarch.Text = "Forced March (+6 miles)";
+        _btnForcedMarch.Name = "BtnForcedMarch";
+        _btnForcedMarch.Visible = false;
+        inspectorContainer.AddChild(_btnForcedMarch);
+        _btnForcedMarch.Toggled += (pressed) => EmitSignal(SignalName.ForcedMarchToggled, pressed);
+
+        // Create Recenter button dynamically
+        _btnRecenter = new Button();
+        _btnRecenter.Text = "Recenter on Party";
+        _btnRecenter.Name = "BtnRecenter";
+        _btnRecenter.Visible = false;
+        inspectorContainer.AddChild(_btnRecenter);
+        _btnRecenter.Pressed += () => EmitSignal(SignalName.RecenterPressed);
 
         // Bind Inspector
         _scaleVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/ScaleVal");
@@ -76,6 +108,27 @@ public partial class GameUI : CanvasLayer
         _detailsVal = GetNode<Label>("InspectorPanel/MarginContainer/VBoxContainer/Grid/DetailsVal");
         _btnAction = GetNode<Button>("InspectorPanel/MarginContainer/VBoxContainer/BtnAction");
         _btnAction.Pressed += () => EmitSignal(SignalName.ActionButtonPressed);
+
+        // Add a separator for the party section
+        var sep = new HSeparator();
+        sep.Name = "PartySeparator";
+        inspectorContainer.AddChild(sep);
+
+        // Party Status Label
+        _lblPartyStatus = new Label();
+        _lblPartyStatus.Name = "PartyStatusVal";
+        _lblPartyStatus.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _lblPartyStatus.CustomMinimumSize = new Vector2(250, 0);
+        _lblPartyStatus.Text = "Party Vitals...";
+        inspectorContainer.AddChild(_lblPartyStatus);
+
+        // Daily Log Label
+        _lblDailyLog = new Label();
+        _lblDailyLog.Name = "DailyLogVal";
+        _lblDailyLog.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _lblDailyLog.CustomMinimumSize = new Vector2(250, 0);
+        _lblDailyLog.Text = "Daily Log...";
+        inspectorContainer.AddChild(_lblDailyLog);
 
         // Bind Dungeon Floor Panel
         _floorPanel = GetNode<Control>("FloorPanel");
@@ -101,6 +154,10 @@ public partial class GameUI : CanvasLayer
         string? customDetails = null)
     {
         _btnNextDay.Visible = (scale == Common.MapScale.Local);
+        _btnForcedMarch.Visible = (scale == Common.MapScale.Local);
+        _btnRecenter.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
+        _lblPartyStatus.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
+        _lblDailyLog.Visible = (scale == Common.MapScale.Local);
 
         // 1. Breadcrumbs Visibility
         switch (scale)
@@ -193,5 +250,11 @@ public partial class GameUI : CanvasLayer
         _coordsVal.Text = coords;
         _biomeVal.Text = biome;
         _detailsVal.Text = details;
+    }
+
+    public void UpdatePartyUI(string partyStatus, string dailyLog)
+    {
+        _lblPartyStatus.Text = partyStatus;
+        _lblDailyLog.Text = dailyLog;
     }
 }

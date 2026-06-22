@@ -127,6 +127,9 @@ public struct HexCoords : IEquatable<HexCoords>
         return list;
     }
 
+    public static HexCoords operator +(HexCoords a, HexCoords b) => new HexCoords(a.Q + b.Q, a.R + b.R);
+    public static HexCoords operator -(HexCoords a, HexCoords b) => new HexCoords(a.Q - b.Q, a.R - b.R);
+
     #region Equality & Boilerplate
     public bool Equals(HexCoords other) => Q == other.Q && R == other.R;
     public override bool Equals(object? obj) => obj is HexCoords other && Equals(other);
