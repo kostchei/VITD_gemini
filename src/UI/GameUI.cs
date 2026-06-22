@@ -20,6 +20,13 @@ public partial class GameUI : CanvasLayer
     [Signal] public delegate void BuyHealPressedEventHandler(string characterName);
     [Signal] public delegate void BuyExhaustionPressedEventHandler(string characterName);
     [Signal] public delegate void HireMercenaryPressedEventHandler(string characterName);
+    [Signal] public delegate void RefineLodestonePressedEventHandler();
+    [Signal] public delegate void GatherLodestonePressedEventHandler();
+    [Signal] public delegate void MineLodestonePressedEventHandler();
+    [Signal] public delegate void DelvePillarPressedEventHandler();
+    [Signal] public delegate void GoDeeperPressedEventHandler();
+    [Signal] public delegate void SearchTunnelPressedEventHandler();
+    [Signal] public delegate void ExitDelvePressedEventHandler();
 
     // Node References
     private Button _btnWorld = null!;
@@ -41,6 +48,13 @@ public partial class GameUI : CanvasLayer
 
     private Label _lblPartyStatus = null!;
     private Label _lblDailyLog = null!;
+
+    private Button _btnGatherLodestone = null!;
+    private Button _btnMineLodestone = null!;
+    private Button _btnDelvePillar = null!;
+    private Button _btnGoDeeper = null!;
+    private Button _btnSearchTunnel = null!;
+    private Button _btnExitDelve = null!;
 
     public bool IsForcedMarchToggled => _btnForcedMarch.ButtonPressed;
 
@@ -145,6 +159,48 @@ public partial class GameUI : CanvasLayer
         _lblDailyLog.Text = "Daily Log...";
         inspectorContainer.AddChild(_lblDailyLog);
 
+        _btnGatherLodestone = new Button();
+        _btnGatherLodestone.Text = "⛏️ Gather Lodestone (1h)";
+        _btnGatherLodestone.Name = "BtnGatherLodestone";
+        _btnGatherLodestone.Visible = false;
+        inspectorContainer.AddChild(_btnGatherLodestone);
+        _btnGatherLodestone.Pressed += () => EmitSignal(SignalName.GatherLodestonePressed);
+
+        _btnMineLodestone = new Button();
+        _btnMineLodestone.Text = "💥 Mine Lodestone (1h, Tools)";
+        _btnMineLodestone.Name = "BtnMineLodestone";
+        _btnMineLodestone.Visible = false;
+        inspectorContainer.AddChild(_btnMineLodestone);
+        _btnMineLodestone.Pressed += () => EmitSignal(SignalName.MineLodestonePressed);
+
+        _btnDelvePillar = new Button();
+        _btnDelvePillar.Text = "🌀 Delve Into Pillar Tunnels";
+        _btnDelvePillar.Name = "BtnDelvePillar";
+        _btnDelvePillar.Visible = false;
+        inspectorContainer.AddChild(_btnDelvePillar);
+        _btnDelvePillar.Pressed += () => EmitSignal(SignalName.DelvePillarPressed);
+
+        _btnGoDeeper = new Button();
+        _btnGoDeeper.Text = "⬇️ Delve Deeper (10 min)";
+        _btnGoDeeper.Name = "BtnGoDeeper";
+        _btnGoDeeper.Visible = false;
+        inspectorContainer.AddChild(_btnGoDeeper);
+        _btnGoDeeper.Pressed += () => EmitSignal(SignalName.GoDeeperPressed);
+
+        _btnSearchTunnel = new Button();
+        _btnSearchTunnel.Text = "🔍 Search Tunnel (30 min)";
+        _btnSearchTunnel.Name = "BtnSearchTunnel";
+        _btnSearchTunnel.Visible = false;
+        inspectorContainer.AddChild(_btnSearchTunnel);
+        _btnSearchTunnel.Pressed += () => EmitSignal(SignalName.SearchTunnelPressed);
+
+        _btnExitDelve = new Button();
+        _btnExitDelve.Text = "🚪 Exit Pillar Delve";
+        _btnExitDelve.Name = "BtnExitDelve";
+        _btnExitDelve.Visible = false;
+        inspectorContainer.AddChild(_btnExitDelve);
+        _btnExitDelve.Pressed += () => EmitSignal(SignalName.ExitDelvePressed);
+
         // Bind Dungeon Floor Panel
         _floorPanel = GetNode<Control>("FloorPanel");
         for (int i = 0; i < 6; i++)
@@ -167,19 +223,28 @@ public partial class GameUI : CanvasLayer
         string? biomeText,
         int activeDungeonLevel,
         string? customDetails = null,
-        bool isPartyOnSettlement = false)
+        bool isPartyOnSettlement = false,
+        bool isPartyOnPillar = false,
+        bool inPillarDelve = false)
     {
         if (scale != Common.MapScale.Local)
         {
             HideShop();
         }
 
-        _btnNextDay.Visible = (scale == Common.MapScale.Local);
-        _btnForcedMarch.Visible = (scale == Common.MapScale.Local);
+        _btnNextDay.Visible = (scale == Common.MapScale.Local && !inPillarDelve);
+        _btnForcedMarch.Visible = (scale == Common.MapScale.Local && !inPillarDelve);
         _btnRecenter.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
         _lblPartyStatus.Visible = (scale == Common.MapScale.Local || scale == Common.MapScale.Dungeon);
         _lblDailyLog.Visible = (scale == Common.MapScale.Local);
-        _btnTrade.Visible = (scale == Common.MapScale.Local && isPartyOnSettlement);
+        _btnTrade.Visible = (scale == Common.MapScale.Local && isPartyOnSettlement && !inPillarDelve);
+
+        _btnGatherLodestone.Visible = (scale == Common.MapScale.Local && isPartyOnPillar && !inPillarDelve);
+        _btnMineLodestone.Visible = (scale == Common.MapScale.Local && isPartyOnPillar && !inPillarDelve);
+        _btnDelvePillar.Visible = (scale == Common.MapScale.Local && isPartyOnPillar && !inPillarDelve);
+        _btnGoDeeper.Visible = (scale == Common.MapScale.Local && inPillarDelve);
+        _btnSearchTunnel.Visible = (scale == Common.MapScale.Local && inPillarDelve);
+        _btnExitDelve.Visible = (scale == Common.MapScale.Local && inPillarDelve);
 
         // 1. Breadcrumbs Visibility
         switch (scale)
@@ -416,6 +481,23 @@ public partial class GameUI : CanvasLayer
 
             _shopItemsContainer.AddChild(charHBox);
         }
+
+        // Separator
+        _shopItemsContainer.AddChild(new HSeparator());
+
+        // Raw Lodestone refining (Page 14)
+        var lodestoneHBox = new HBoxContainer();
+        var lblLodestone = new Label();
+        lblLodestone.Text = $"Raw Lodestone - You have: {partyState.RawLodestone} slot(s)\nRefines into 1d10*10 Coins.";
+        lblLodestone.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        lodestoneHBox.AddChild(lblLodestone);
+
+        var btnRefine = new Button();
+        btnRefine.Text = "Refine (Sell)";
+        btnRefine.Disabled = (partyState.RawLodestone < 1);
+        btnRefine.Pressed += () => EmitSignal(SignalName.RefineLodestonePressed);
+        lodestoneHBox.AddChild(btnRefine);
+        _shopItemsContainer.AddChild(lodestoneHBox);
     }
 
     public void HideShop()

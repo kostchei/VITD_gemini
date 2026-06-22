@@ -74,6 +74,13 @@ public partial class Main : Node2D
         _ui.BuyHealPressed += OnBuyHealPressed;
         _ui.BuyExhaustionPressed += OnBuyExhaustionPressed;
         _ui.HireMercenaryPressed += OnHireMercenaryPressed;
+        _ui.RefineLodestonePressed += OnRefineLodestonePressed;
+        _ui.GatherLodestonePressed += OnGatherLodestonePressed;
+        _ui.MineLodestonePressed += OnMineLodestonePressed;
+        _ui.DelvePillarPressed += OnDelvePillarPressed;
+        _ui.GoDeeperPressed += OnGoDeeperPressed;
+        _ui.SearchTunnelPressed += OnSearchTunnelPressed;
+        _ui.ExitDelvePressed += OnExitDelvePressed;
 
         // 6. Set Initial State
         EnterRegionalScale();
@@ -423,6 +430,7 @@ public partial class Main : Node2D
             }
 
             bool isPartyOnSettlement = false;
+            bool isPartyOnPillar = false;
             if (coords == _partyState.LocalCoords)
             {
                 string b = tile.Biome;
@@ -430,6 +438,16 @@ public partial class Main : Node2D
                 {
                     isPartyOnSettlement = true;
                 }
+                else if (b == "Pillars")
+                {
+                    isPartyOnPillar = true;
+                }
+            }
+
+            if (_partyState.InPillarDelve && isPartyOnPillar)
+            {
+                selectedName = $"Delving Pillar Base: Depth {_partyState.DelveDepth}";
+                customDetails = $"Tunnel Shape: {_partyState.DelveTunnelShape}\nEvents: {_partyState.DelvePreviousEventsCount} rolled.\nGold: {_partyState.Gold}g | Rations: {_partyState.Rations}\nRaw Lodestone: {_partyState.RawLodestone} slot(s)";
             }
 
             _ui.UpdateUIState(
@@ -439,7 +457,9 @@ public partial class Main : Node2D
                 tile.Biome,
                 1,
                 customDetails,
-                isPartyOnSettlement: isPartyOnSettlement
+                isPartyOnSettlement: isPartyOnSettlement,
+                isPartyOnPillar: isPartyOnPillar,
+                inPillarDelve: _partyState.InPillarDelve
             );
         }
         else
@@ -907,6 +927,108 @@ public partial class Main : Node2D
         System.Diagnostics.Debug.Assert(thresholdVal5 == 1, "Threshold should be 1 with 5 assets");
         System.Diagnostics.Debug.Assert(1 >= thresholdVal5, "Roll 1 should be success under 5 assets");
         GD.Print("[TEST] 8. Navigation asset roll threshold math: PASS");
+
+        // Test 9: Pillar Delving, Mining, and Refining validation
+        GD.Print("[TEST] 9. Pillar Delving, Mining & Refining...");
+        
+        // Backup original party state values
+        bool origInPillarDelve = _partyState.InPillarDelve;
+        int origDelveDepth = _partyState.DelveDepth;
+        int origDelvePreviousEventsCount = _partyState.DelvePreviousEventsCount;
+        string origDelveTunnelShape = _partyState.DelveTunnelShape;
+        int origRawLodestone = _partyState.RawLodestone;
+        int origGold = _partyState.Gold;
+        string origDailyLog = _partyState.DailyLog;
+        int origRations = _partyState.Rations;
+
+        var origMembersBackup = new List<(Character charRef, int grit, int flesh, int exhaustion, bool isAlive, List<string> memories, Dictionary<string, bool> injuries)>();
+        foreach (var member in _partyState.Members)
+        {
+            origMembersBackup.Add((
+                member,
+                member.Grit,
+                member.Flesh,
+                member.Exhaustion,
+                member.IsAlive,
+                new List<string>(member.Memories),
+                new Dictionary<string, bool>(member.Injuries)
+            ));
+        }
+
+        // Test Mining / Gathering lodestones
+        _partyState.RawLodestone = 0;
+        
+        OnGatherLodestonePressed();
+        int gathered = _partyState.RawLodestone;
+        System.Diagnostics.Debug.Assert(gathered >= 1 && gathered <= 2, $"Gathered lodestone count ({gathered}) should be between 1 and 2.");
+        
+        _partyState.RawLodestone = 0;
+        OnMineLodestonePressed();
+        int mined = _partyState.RawLodestone;
+        System.Diagnostics.Debug.Assert(mined >= 1 && mined <= 6, $"Mined lodestone count ({mined}) should be between 1 and 6.");
+
+        // Test Delving initiation
+        _partyState.InPillarDelve = false;
+        OnDelvePillarPressed();
+        System.Diagnostics.Debug.Assert(_partyState.InPillarDelve == true, "Entering delve should set InPillarDelve to true");
+        System.Diagnostics.Debug.Assert(_partyState.DelveDepth == 1, $"Entering delve should start at Depth 1, got {_partyState.DelveDepth}");
+        System.Diagnostics.Debug.Assert(_partyState.DelvePreviousEventsCount == 1, $"Entering delve should roll 1 initial event, got {_partyState.DelvePreviousEventsCount}");
+        System.Diagnostics.Debug.Assert(!string.IsNullOrEmpty(_partyState.DelveTunnelShape), "Tunnel shape should be rolled upon entry");
+
+        // Test Go Deeper
+        OnGoDeeperPressed();
+        System.Diagnostics.Debug.Assert(_partyState.DelveDepth == 2, $"Go Deeper should set Depth to 2, got {_partyState.DelveDepth}");
+        System.Diagnostics.Debug.Assert(_partyState.DelvePreviousEventsCount == 2, $"Go Deeper should increment event count to 2, got {_partyState.DelvePreviousEventsCount}");
+
+        // Test Search Tunnel
+        OnSearchTunnelPressed();
+        System.Diagnostics.Debug.Assert(_partyState.DelveDepth == 2, "Searching tunnel should not change depth");
+        System.Diagnostics.Debug.Assert(_partyState.DelvePreviousEventsCount == 3, $"Searching tunnel should increment event count to 3, got {_partyState.DelvePreviousEventsCount}");
+
+        // Test Exit Delve
+        OnExitDelvePressed();
+        System.Diagnostics.Debug.Assert(_partyState.InPillarDelve == false, "Exiting delve should clear InPillarDelve flag");
+
+        // Test Refining
+        _partyState.RawLodestone = 0;
+        _partyState.Gold = 100;
+        OnRefineLodestonePressed();
+        System.Diagnostics.Debug.Assert(_partyState.RawLodestone == 0, "Refining with 0 lodestones should do nothing");
+        System.Diagnostics.Debug.Assert(_partyState.Gold == 100, "Refining with 0 lodestones should not yield gold");
+
+        _partyState.RawLodestone = 1;
+        _partyState.Gold = 100;
+        OnRefineLodestonePressed();
+        System.Diagnostics.Debug.Assert(_partyState.RawLodestone == 0, "Refining should consume 1 raw lodestone");
+        int goldGained = _partyState.Gold - 100;
+        System.Diagnostics.Debug.Assert(goldGained >= 10 && goldGained <= 100 && goldGained % 10 == 0, $"Gold gained from refining ({goldGained}) must be 10..100, and a multiple of 10.");
+
+        // Restore original party state values
+        _partyState.InPillarDelve = origInPillarDelve;
+        _partyState.DelveDepth = origDelveDepth;
+        _partyState.DelvePreviousEventsCount = origDelvePreviousEventsCount;
+        _partyState.DelveTunnelShape = origDelveTunnelShape;
+        _partyState.RawLodestone = origRawLodestone;
+        _partyState.Gold = origGold;
+        _partyState.DailyLog = origDailyLog;
+        _partyState.Rations = origRations;
+
+        foreach (var backup in origMembersBackup)
+        {
+            backup.charRef.Grit = backup.grit;
+            backup.charRef.Flesh = backup.flesh;
+            backup.charRef.Exhaustion = backup.exhaustion;
+            backup.charRef.IsAlive = backup.isAlive;
+            backup.charRef.Memories = backup.memories;
+            // Restore injuries
+            var keys = new List<string>(backup.injuries.Keys);
+            foreach (var key in keys)
+            {
+                backup.charRef.Injuries[key] = backup.injuries[key];
+            }
+        }
+
+        GD.Print("[TEST] 9. Pillar Delving, Mining & Refining: PASS");
 
         GD.Print("[TEST] All Zine Rules Unit Tests: PASS!\n");
     }
@@ -1907,6 +2029,322 @@ public partial class Main : Node2D
                 return "Griffon: Resting on high point. Remains of latest victim are nearby.";
             default:
                 return "No Encounter: The wastes are silent.";
+        }
+    }
+
+    private void ResolveDelveEventAndLoot(System.Text.StringBuilder log, Random random)
+    {
+        _partyState.DelvePreviousEventsCount++;
+        int eventRoll = random.Next(1, 7) + _partyState.DelvePreviousEventsCount;
+        log.AppendLine($"\n🌀 Pillar Event (Roll: {eventRoll}):");
+        switch (eventRoll)
+        {
+            case <= 3:
+                log.AppendLine("• Chill Fog floods the tunnel! Cold vapor sets in.");
+                foreach (var member in _partyState.Members)
+                {
+                    if (member.IsAlive && member.RollCheck("CON", random) < 10)
+                    {
+                        member.ApplyDirectDamage(random.Next(1, 7));
+                    }
+                }
+                break;
+            case 4:
+                log.AppendLine("• Wind Blast! Echoing boom violently tosses the party.");
+                foreach (var member in _partyState.Members)
+                {
+                    if (member.IsAlive && member.RollCheck("DEX", random) < 10)
+                    {
+                        member.ApplyDirectDamage(random.Next(1, 7) * 2);
+                    }
+                }
+                break;
+            case 5:
+                log.AppendLine("• 2d6 Cyclops emerge from the dark! Their voices hum with hollow notes.");
+                break;
+            case 6:
+                log.AppendLine("• Decay: Impermanence crumbles items. Erased 1 Ration.");
+                _partyState.Rations = Math.Max(0, _partyState.Rations - 1);
+                break;
+            case 7:
+                log.AppendLine("• 1d6 Medusa creep forward, humming harmonically.");
+                break;
+            case 8:
+                log.AppendLine("• 2d6 Harpies cling to the walls, damp breaths quickening.");
+                break;
+            case 9:
+                log.AppendLine("• Collapse! The tunnel caves in. Clearing rubble adds 1 hour.");
+                break;
+            case 10:
+                log.AppendLine("• Hallucination: Perceptions twist! A traveler lashes out at a companion.");
+                var active = _partyState.Members.FindAll(m => m.IsAlive);
+                if (active.Count >= 2)
+                {
+                    var attacker = active[random.Next(active.Count)];
+                    var victim = active.Find(m => m.Name != attacker.Name);
+                    if (victim != null)
+                    {
+                        victim.ApplyDirectDamage(random.Next(1, 7));
+                        log.AppendLine($"  - {attacker.Name} struck {victim.Name} in confusion.");
+                    }
+                }
+                break;
+            case 11:
+                log.AppendLine("• Harmonics: A deep frequency clouds the mind. Save vs CON or gain exhaustion.");
+                foreach (var member in _partyState.Members)
+                {
+                    if (member.IsAlive && member.RollCheck("CON", random) < 10)
+                    {
+                        member.Exhaustion = Math.Min(6, member.Exhaustion + 1);
+                        log.AppendLine($"  - {member.Name} gained 1 exhaustion (Exh: {member.Exhaustion}/6).");
+                    }
+                }
+                break;
+            case 12:
+                log.AppendLine("• An Ogre squeezes forward, hungry and desperate!");
+                break;
+            case 13:
+                log.AppendLine("• Ego Sink: An impossible stillness causes the mind to slip. Save vs WIS or gain 1d3 exhaustion.");
+                foreach (var member in _partyState.Members)
+                {
+                    if (member.IsAlive && member.RollCheck("WIS", random) < 10)
+                    {
+                        int exhGained = random.Next(1, 4);
+                        member.Exhaustion = Math.Min(6, member.Exhaustion + exhGained);
+                        log.AppendLine($"  - {member.Name} gained {exhGained} exhaustion (Exh: {member.Exhaustion}/6).");
+                    }
+                }
+                break;
+            case 14:
+                log.AppendLine("• Shade filaments swarm with ravenous hunger!");
+                break;
+            default: // 15+
+                log.AppendLine("• Call of the Dark: The pillar's will commands you. Gain 1 exhaustion (or lose a memory).");
+                foreach (var member in _partyState.Members)
+                {
+                    if (member.IsAlive)
+                    {
+                        if (member.Exhaustion < 6)
+                        {
+                            member.Exhaustion++;
+                            log.AppendLine($"  - {member.Name} gained 1 exhaustion (Exh: {member.Exhaustion}/6).");
+                        }
+                        else
+                        {
+                            member.LoseMemory(log);
+                        }
+                    }
+                }
+                break;
+        }
+
+        foreach (var member in _partyState.Members)
+        {
+            if (member.IsAlive && member.Exhaustion >= 6)
+            {
+                member.IsAlive = false;
+                member.HP = 0;
+                log.AppendLine($"☠️ {member.Name} has died of exhaustion!");
+            }
+        }
+
+        int lootRoll = random.Next(1, 7) + _partyState.DelveDepth;
+        log.AppendLine($"\n🎁 Pillar Loot (Roll: {lootRoll}):");
+        switch (lootRoll)
+        {
+            case <= 3:
+                int coins1 = random.Next(1, 21);
+                _partyState.Gold += coins1;
+                log.AppendLine($"• Forgotten Corpse: Found {coins1} coins.");
+                break;
+            case 4:
+            case 5:
+            case 6:
+                int lodestones = random.Next(1, 11);
+                _partyState.RawLodestone += lodestones;
+                log.AppendLine($"• Loose Lodestone: Mined {lodestones} Raw Lodestones.");
+                break;
+            case 7:
+                int idols = random.Next(1, 11);
+                _partyState.Gold += idols * 100;
+                log.AppendLine($"• Lodestone Idols: Found {idols} idols (worth {idols * 100}g).");
+                break;
+            case 8:
+                int rats = random.Next(1, 11);
+                int coins2 = random.Next(1, 7) * 10;
+                _partyState.Rations += rats;
+                _partyState.Gold += coins2;
+                log.AppendLine($"• Abandoned Supplies: Found {rats} rations and {coins2} gold.");
+                break;
+            case 9:
+                int lodestones2 = random.Next(2, 21);
+                _partyState.RawLodestone += lodestones2;
+                log.AppendLine($"• Felled Lodestone: Found {lodestones2} Raw Lodestones.");
+                break;
+            case 10:
+                log.AppendLine("• Lone Survivor: Whispers a secret before expiring: 'There is a way out...'");
+                break;
+            case 11:
+                log.AppendLine("• Lodestone Mural: Geometric carvings allude to some obscure truth.");
+                break;
+            case 12:
+                int rats3 = random.Next(1, 21);
+                int coins3 = random.Next(1, 7) * 50;
+                _partyState.Rations += rats3;
+                _partyState.Gold += coins3;
+                log.AppendLine($"• Corpse Pile: Salvaged {rats3} rations and {coins3} gold.");
+                break;
+            case 13:
+                log.AppendLine("• Artifact: Found a magical artifact!");
+                _partyState.Gold += 300;
+                break;
+            default: // 14+
+                int hoard = random.Next(2, 41);
+                _partyState.RawLodestone += hoard;
+                log.AppendLine($"• Hoard: Discovered a massive deposit of {hoard} Raw Lodestones!");
+                break;
+        }
+    }
+
+    private void OnGatherLodestonePressed()
+    {
+        var random = new Random();
+        int gathered = random.Next(1, 3);
+        _partyState.RawLodestone += gathered;
+        
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"⛏️ GATHER LODESTONE: Spent 1 hour gathering lodestone fragments at the Pillar base.");
+        log.AppendLine($"• Found {gathered} Raw Lodestone slot(s) (Total Raw Lodestone: {_partyState.RawLodestone}).");
+
+        if (random.Next(1, 7) == 1)
+        {
+            int d12Roll = RollDice(1, 12);
+            int d6Roll = RollDice(1, 6);
+            int totalEncounterRoll = Math.Clamp(d12Roll + d6Roll + _partyState.ActiveWeatherEncounterMod, 2, 18);
+            string encounterDesc = ResolveEncounterDescription(totalEncounterRoll, d6Roll);
+            log.AppendLine($"\n⚠️ ENCOUNTER TRIGGERED (Noise attracted attention):\n{encounterDesc}");
+        }
+        else
+        {
+            log.AppendLine("\n• The area remains quiet for now.");
+        }
+
+        _partyState.DailyLog = log.ToString();
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnMineLodestonePressed()
+    {
+        var random = new Random();
+        int mined = random.Next(1, 7);
+        _partyState.RawLodestone += mined;
+        
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"⛏️ MINE LODESTONE: Spent 1 hour using tools to excavate lodestone columns.");
+        log.AppendLine($"• Extracted {mined} Raw Lodestone slot(s) (Total Raw Lodestone: {_partyState.RawLodestone}).");
+
+        if (random.Next(1, 7) <= 2)
+        {
+            int d12Roll = RollDice(1, 12);
+            int d6Roll = RollDice(1, 6);
+            int totalEncounterRoll = Math.Clamp(d12Roll + d6Roll + _partyState.ActiveWeatherEncounterMod, 2, 18);
+            string encounterDesc = ResolveEncounterDescription(totalEncounterRoll, d6Roll);
+            log.AppendLine($"\n⚠️ ENCOUNTER TRIGGERED (Loud mining noise attracted attention):\n{encounterDesc}");
+        }
+        else
+        {
+            log.AppendLine("\n• The area remains quiet for now.");
+        }
+
+        _partyState.DailyLog = log.ToString();
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnDelvePillarPressed()
+    {
+        var random = new Random();
+        _partyState.InPillarDelve = true;
+        _partyState.DelveDepth = 1;
+        _partyState.DelvePreviousEventsCount = 0;
+        
+        string[] shapes = { "Constricting Squeeze (Prone travel)", "Sheer Drop (Climbing gear helpful)", "Tight Halls (Single file)", "Winding Tunnel (Easy to get lost)", "Jagged Ascent (Climbing gear helpful)", "Cavernous (Massive & Dark)" };
+        int shapeRoll = random.Next(shapes.Length);
+        _partyState.DelveTunnelShape = shapes[shapeRoll];
+
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"🌀 PILLAR DELVE: Entered the fissure tunnels of the titanic Column.");
+        log.AppendLine($"• Tunnel Shape & Size: {_partyState.DelveTunnelShape}");
+
+        ResolveDelveEventAndLoot(log, random);
+
+        _partyState.DailyLog = log.ToString();
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnGoDeeperPressed()
+    {
+        var random = new Random();
+        _partyState.DelveDepth++;
+        
+        string[] shapes = { "Constricting Squeeze (Prone travel)", "Sheer Drop (Climbing gear helpful)", "Tight Halls (Single file)", "Winding Tunnel (Easy to get lost)", "Jagged Ascent (Climbing gear helpful)", "Cavernous (Massive & Dark)" };
+        int shapeRoll = random.Next(shapes.Length);
+        _partyState.DelveTunnelShape = shapes[shapeRoll];
+
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"⬇️ DELVING DEEPER: Advanced to Depth {_partyState.DelveDepth} of the Pillar tunnels.");
+        log.AppendLine($"• Tunnel Shape & Size: {_partyState.DelveTunnelShape}");
+
+        ResolveDelveEventAndLoot(log, random);
+
+        _partyState.DailyLog = log.ToString();
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnSearchTunnelPressed()
+    {
+        var random = new Random();
+        var log = new System.Text.StringBuilder();
+        log.AppendLine($"🔍 SEARCH TUNNEL: Spent 30 minutes searching through twisted passages and debris at Depth {_partyState.DelveDepth}.");
+
+        ResolveDelveEventAndLoot(log, random);
+
+        _partyState.DailyLog = log.ToString();
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnExitDelvePressed()
+    {
+        _partyState.InPillarDelve = false;
+        _partyState.DailyLog = "🚪 EXIT PILLAR: Returned safely to the surface of the Column base.";
+        UpdatePartyStatusUI();
+        UpdateLocalUISelection();
+    }
+
+    private void OnRefineLodestonePressed()
+    {
+        if (_partyState.RawLodestone >= 1)
+        {
+            var random = new Random();
+            _partyState.RawLodestone--;
+            int earned = random.Next(1, 11) * 10;
+            _partyState.Gold += earned;
+
+            _partyState.DailyLog = $"🛍️ REFINING: Refined 1 Raw Lodestone slot. Earned {earned} Gold! Purse: {_partyState.Gold}g.";
+            _ui.ShowShop(_partyState);
+            UpdatePartyStatusUI();
+        }
+    }
+
+    private void UpdateLocalUISelection()
+    {
+        if (_renderer.SelectedLocalCoords.HasValue)
+        {
+            OnLocalSelected(_renderer.SelectedLocalCoords.Value.Q, _renderer.SelectedLocalCoords.Value.R);
         }
     }
 
