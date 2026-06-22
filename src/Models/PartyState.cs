@@ -29,6 +29,8 @@ public class PartyState
     public bool HasTool { get; set; } = false;
     public bool HasLight { get; set; } = false;
     public bool HasDeadReckoning { get; set; } = false;
+    public bool UtterlyLostActive { get; set; } = false;
+    public int UtterlyLostDays { get; set; } = 0;
 
     // Raw Lodestone Inventory (Page 14)
     public int RawLodestone { get; set; } = 0;

@@ -246,7 +246,12 @@ public partial class Main : Node2D
                 if (_mapData.RegionalTiles.TryGetValue(newRegCoords, out var newRegTile))
                 {
                     // Check daily limit
-                    if (_partyState.MilesTraveledToday >= _partyState.DailyMovementLimit)
+                    if (_partyState.UtterlyLostActive)
+                    {
+                        _partyState.DailyLog = "⚠️ UTTERLY LOST: The party is utterly lost and cannot choose their direction! Click 'Next Day' to try to find your way back to safety.";
+                        UpdatePartyStatusUI();
+                    }
+                    else if (_partyState.MilesTraveledToday >= _partyState.DailyMovementLimit)
                     {
                         _partyState.DailyLog = $"⚠️ MOVEMENT BLOCKED: The party is exhausted from traveling {_partyState.DailyMovementLimit} miles today!\n" +
                                                $"Click 'Next Day' to rest and regain movement budget.";
@@ -316,7 +321,12 @@ public partial class Main : Node2D
             {
                 // Normal local move (inside the 37-subhex grid)
                 // Check daily limit
-                if (_partyState.MilesTraveledToday >= _partyState.DailyMovementLimit)
+                if (_partyState.UtterlyLostActive)
+                {
+                    _partyState.DailyLog = "⚠️ UTTERLY LOST: The party is utterly lost and cannot choose their direction! Click 'Next Day' to try to find your way back to safety.";
+                    UpdatePartyStatusUI();
+                }
+                else if (_partyState.MilesTraveledToday >= _partyState.DailyMovementLimit)
                 {
                     _partyState.DailyLog = $"⚠️ MOVEMENT BLOCKED: The party is exhausted from traveling {_partyState.DailyMovementLimit} miles today!\n" +
                                            $"Click 'Next Day' to rest and regain movement budget.";
@@ -873,6 +883,31 @@ public partial class Main : Node2D
         System.Diagnostics.Debug.Assert(!c4.IsAlive, "Should be dead with 0 memories");
         GD.Print("[TEST] 7. Memory decay death: PASS");
 
+        // Test 8: Navigation D6 Roll & Assets system
+        var pState = new PartyState();
+        System.Diagnostics.Debug.Assert(pState.GetNavigationAssetCount() == 0, "Default assets should be 0");
+        
+        pState.HasLandmark = true;
+        pState.HasDirections = true;
+        pState.HasTool = true;
+        System.Diagnostics.Debug.Assert(pState.GetNavigationAssetCount() == 3, "Assets count should be 3");
+
+        int assetsCount = pState.GetNavigationAssetCount();
+        int thresholdVal = 6 - assetsCount; // 3
+        System.Diagnostics.Debug.Assert(thresholdVal == 3, "Threshold should be 3 with 3 assets");
+        System.Diagnostics.Debug.Assert(1 < thresholdVal, "Roll 1 should be lost");
+        System.Diagnostics.Debug.Assert(2 < thresholdVal, "Roll 2 should be lost");
+        System.Diagnostics.Debug.Assert(3 >= thresholdVal, "Roll 3 should be success");
+        System.Diagnostics.Debug.Assert(6 >= thresholdVal, "Roll 6 should be success");
+
+        pState.HasLight = true;
+        pState.HasDeadReckoning = true;
+        System.Diagnostics.Debug.Assert(pState.GetNavigationAssetCount() == 5, "Assets count should be 5");
+        int thresholdVal5 = 6 - pState.GetNavigationAssetCount(); // 1
+        System.Diagnostics.Debug.Assert(thresholdVal5 == 1, "Threshold should be 1 with 5 assets");
+        System.Diagnostics.Debug.Assert(1 >= thresholdVal5, "Roll 1 should be success under 5 assets");
+        GD.Print("[TEST] 8. Navigation asset roll threshold math: PASS");
+
         GD.Print("[TEST] All Zine Rules Unit Tests: PASS!\n");
     }
 
@@ -1247,6 +1282,84 @@ public partial class Main : Node2D
         }
         log.AppendLine($"Weather: {weatherType}");
 
+        // 1.5. Navigation Roll Phase
+        bool didTravel = _partyState.MilesTraveledToday > 0;
+        int navAssets = _partyState.GetNavigationAssetCount();
+        if (!landmarksVisible && _partyState.HasLandmark)
+        {
+            navAssets = Math.Max(0, navAssets - 1); // Landmark obscured!
+            log.AppendLine("• Landmark obscured by weather (cannot be used for navigation).");
+        }
+
+        if (didTravel && !_partyState.Sheltered)
+        {
+            if (_partyState.UtterlyLostActive)
+            {
+                // Already utterly lost, must roll to recover
+                int recoverRoll = random.Next(1, 7);
+                int successThreshold = 6 - navAssets;
+                if (recoverRoll >= successThreshold)
+                {
+                    _partyState.UtterlyLostActive = false;
+                    log.AppendLine($"• SUCCESS: The party found their bearings after {_partyState.UtterlyLostDays} days and returned to where they started (subhex (0,0)).");
+                    _partyState.UtterlyLostDays = 0;
+                    _partyState.LocalCoords = HexCoords.Zero;
+                    _renderer.PartyLocalCoords = HexCoords.Zero;
+                }
+                else
+                {
+                    _partyState.UtterlyLostDays++;
+                    log.AppendLine($"• LOST: The party is still UTTERLY LOST (Day {_partyState.UtterlyLostDays} spent wandering). No progress made.");
+                    _partyState.MilesTraveledToday = 0;
+                }
+            }
+            else
+            {
+                int navRoll = random.Next(1, 7);
+                int successThreshold = 6 - navAssets;
+                if (navRoll < successThreshold)
+                {
+                    // Lost! Effect depends on roll (1 to 5)
+                    switch (navRoll)
+                    {
+                        case 1:
+                            log.AppendLine($"• NAVIGATION ROLL FAILED: Rolled {navRoll} (Threshold: {successThreshold}). Lost Effect: LATE (-6 miles movement limit today).");
+                            weatherTravelPenalty += 6;
+                            break;
+                        case 2:
+                            var newCoords = GetRandomLocalCoordinate(random);
+                            log.AppendLine($"• NAVIGATION ROLL FAILED: Rolled {navRoll} (Threshold: {successThreshold}). Lost Effect: OFF COURSE (Shifted to random subhex {newCoords}).");
+                            _partyState.LocalCoords = newCoords;
+                            _renderer.PartyLocalCoords = newCoords;
+                            break;
+                        case 3:
+                            var dangerCoords = GetRandomLocalCoordinate(random);
+                            log.AppendLine($"• NAVIGATION ROLL FAILED: Rolled {navRoll} (Threshold: {successThreshold}). Lost Effect: DANGEROUSLY OFF COURSE (Shifted to random subhex {dangerCoords} and party takes damage).");
+                            _partyState.LocalCoords = dangerCoords;
+                            _renderer.PartyLocalCoords = dangerCoords;
+                            foreach (var member in _partyState.Members)
+                            {
+                                if (member.IsAlive)
+                                {
+                                    member.ApplyDirectDamage(random.Next(1, 7)); // 1d6 damage
+                                }
+                            }
+                            break;
+                        default: // 4 or 5
+                            log.AppendLine($"• NAVIGATION ROLL FAILED: Rolled {navRoll} (Threshold: {successThreshold}). Lost Effect: UTTERLY LOST.");
+                            _partyState.UtterlyLostActive = true;
+                            _partyState.UtterlyLostDays = 1;
+                            _partyState.MilesTraveledToday = 0;
+                            break;
+                    }
+                }
+                else
+                {
+                    log.AppendLine($"• Navigation Roll: Success! Rolled {navRoll} (Threshold: {successThreshold} with {navAssets} assets).");
+                }
+            }
+        }
+
         // Save forced march status of the day that just ended, then reset it for the new day
         bool wasForcedMarch = _partyState.ForcedMarchActive;
         _partyState.ForcedMarchActive = false;
@@ -1255,6 +1368,10 @@ public partial class Main : Node2D
         // 2. Travel & Movement Phase
         int baseLimit = 18;
         _partyState.DailyMovementLimit = Math.Max(0, baseLimit - weatherTravelPenalty);
+        if (_partyState.UtterlyLostActive)
+        {
+            _partyState.DailyMovementLimit = 0;
+        }
         _partyState.MilesTraveledToday = 0; // Reset daily counter on rest/new day
         log.AppendLine($"Today's Movement Limit: {_partyState.DailyMovementLimit} miles.");
 
@@ -1802,6 +1919,20 @@ public partial class Main : Node2D
             total += random.Next(1, sides + 1);
         }
         return total;
+    }
+
+    private HexCoords GetRandomLocalCoordinate(Random random)
+    {
+        while (true)
+        {
+            int q = random.Next(-3, 4);
+            int r = random.Next(-3, 4);
+            int s = -q - r;
+            if (Math.Abs(s) <= 3)
+            {
+                return new HexCoords(q, r);
+            }
+        }
     }
 
     private static readonly HexCoords[] FlatTopDirections = new[]
