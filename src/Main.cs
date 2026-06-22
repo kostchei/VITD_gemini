@@ -780,9 +780,106 @@ public partial class Main : Node2D
         }
     }
 
+    private void RunRulesTests()
+    {
+        GD.Print("[TEST] Running Zine Rules Unit Tests...");
+        var rand = new Random(42); // Seeded random for deterministic testing
+
+        // Test 1: Ability modifier calculation (DCC rule)
+        var c1 = new Character("TestSubject", 15, 11, 14, 9, 12, 8);
+        System.Diagnostics.Debug.Assert(c1.StrMod == 2, "STR modifier mismatch");
+        System.Diagnostics.Debug.Assert(c1.DexMod == 0, "DEX modifier mismatch");
+        System.Diagnostics.Debug.Assert(c1.ConMod == 2, "CON modifier mismatch");
+        System.Diagnostics.Debug.Assert(c1.WisMod == -1, "WIS modifier mismatch");
+        System.Diagnostics.Debug.Assert(c1.IntMod == 1, "INT modifier mismatch");
+        System.Diagnostics.Debug.Assert(c1.ChaMod == -1, "CHA modifier mismatch");
+        GD.Print("[TEST] 1. DCC modifier math: PASS");
+
+        // Test 2: Grit/Flesh Vital calculations
+        System.Diagnostics.Debug.Assert(c1.MaxGrit == 8, $"Max Grit calculation mismatch: got {c1.MaxGrit}, expected 8");
+        System.Diagnostics.Debug.Assert(c1.MaxFlesh == 3, $"Max Flesh calculation mismatch: got {c1.MaxFlesh}, expected 3");
+        GD.Print("[TEST] 2. Grit & Flesh vitals calculation: PASS");
+
+        // Test 3: HP / MaxHP delegation check
+        System.Diagnostics.Debug.Assert(c1.HP == 8, "HP getter mismatch");
+        System.Diagnostics.Debug.Assert(c1.MaxHP == 8, "MaxHP getter mismatch");
+        GD.Print("[TEST] 3. HP delegation getters: PASS");
+
+        // Test 4: Injury and disadvantage check
+        c1.Injuries["DEX"] = true;
+        int totalNormal = 0;
+        int totalInjured = 0;
+        int trials = 1000;
+        for (int i = 0; i < trials; i++)
+        {
+            totalNormal += c1.RollCheck("STR", rand); // Normal (+2 mod)
+            totalInjured += c1.RollCheck("DEX", rand); // Injured (+0 mod, disadvantage)
+        }
+        double avgNormal = (double)totalNormal / trials;
+        double avgInjured = (double)totalInjured / trials;
+        GD.Print($"[TEST] Normal average roll (STR): {avgNormal}, Injured average roll (DEX): {avgInjured}");
+        System.Diagnostics.Debug.Assert(avgInjured < avgNormal - 3, "Disadvantage check does not show significant drop");
+        GD.Print("[TEST] 4. Ability check disadvantage: PASS");
+
+        // Test 5: Grit & Flesh damage resolution and Injury application
+        var c2 = new Character("Defender", 10, 10, 10, 10, 10, 10);
+        c2.RecalculateMaxVitals(); // Max Grit = 6, Max Flesh = 1
+        c2.Grit = 6;
+        c2.Flesh = 1;
+        
+        c2.HP -= 4; 
+        System.Diagnostics.Debug.Assert(c2.Grit == 2, "Grit should be 2");
+        System.Diagnostics.Debug.Assert(c2.Flesh == 1, "Flesh should be 1");
+        GD.Print("[TEST] 5a. Grit absorbs damage: PASS");
+
+        c2.HP -= 4;
+        System.Diagnostics.Debug.Assert(c2.Grit == 0, "Grit should be 0");
+        System.Diagnostics.Debug.Assert(c2.Flesh == 0, "Flesh should be 0");
+        System.Diagnostics.Debug.Assert(!c2.IsAlive, "Character should be incapacitated/dead");
+        System.Diagnostics.Debug.Assert(c2.Memories.Count == 4, $"Memories remaining should be 4, got {c2.Memories.Count}");
+        GD.Print("[TEST] 5b. Flesh overflow and memory decay: PASS");
+
+        // Test 6: Healing constraints
+        var c3 = new Character("Resting", 10, 10, 10, 10, 10, 10);
+        c3.Grit = 2; // Max 6
+        c3.Flesh = 1; // Max 1
+        
+        c3.HP += 2;
+        System.Diagnostics.Debug.Assert(c3.Grit == 4, $"Grit should heal to 4, got {c3.Grit}");
+        
+        c3.Level = 2;
+        c3.RecalculateMaxVitals(); // Max Grit = 12, Max Flesh = 2
+        c3.Flesh = 1; // Flesh is damaged! (1 < 2)
+        c3.Grit = 5;
+        
+        c3.HP += 4;
+        System.Diagnostics.Debug.Assert(c3.Grit == 5, $"Grit healing should be blocked when Flesh is damaged! got {c3.Grit}");
+        GD.Print("[TEST] 6a. Healing blocked on damaged Flesh: PASS");
+        
+        c3.HealFlesh(1); // Flesh restored to 2 (Max)
+        c3.HP += 4;
+        System.Diagnostics.Debug.Assert(c3.Grit == 9, $"Grit should heal when Flesh is restored! got {c3.Grit}");
+        GD.Print("[TEST] 6b. Healing active after Flesh recovery: PASS");
+
+        // Test 7: Memory elimination death
+        var c4 = new Character("Dying", 10, 10, 10, 10, 10, 10);
+        System.Diagnostics.Debug.Assert(c4.Memories.Count == 5, "Should start with 5 memories");
+        for (int i = 0; i < 4; i++)
+        {
+            c4.LoseMemory();
+        }
+        System.Diagnostics.Debug.Assert(c4.IsAlive, "Should still be alive with 1 memory");
+        c4.LoseMemory();
+        System.Diagnostics.Debug.Assert(!c4.IsAlive, "Should be dead with 0 memories");
+        GD.Print("[TEST] 7. Memory decay death: PASS");
+
+        GD.Print("[TEST] All Zine Rules Unit Tests: PASS!\n");
+    }
+
     private async void RunAutomatedTest()
     {
         GD.Print("[TEST] Starting automated integration test...");
+        RunRulesTests();
         string artifactDir = System.Environment.GetEnvironmentVariable("GEMINI_ARTIFACT_DIR") 
             ?? "C:/Users/Admin/.gemini/antigravity/brain/b7ef128f-c031-437d-97cc-80f5a35be685";
         
